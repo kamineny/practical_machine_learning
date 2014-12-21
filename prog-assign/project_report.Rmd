@@ -261,10 +261,11 @@ Prediction with Random Forests yielded better results than decision trees.
 ## Generating Files to submit as answers for the Assignment:
 
 Finally, using the provided Test Set:
+---
 Note:
-#For Decision Tree would be like this, but not going to use it now as Random forests produced more accurate results:
-#predictionsA2 <- predict(modFitA1, test, type = "class")
-
+For Decision Tree would be like this, but not going to use it now as Random forests produced more accurate results:
+predictionsA2 <- predict(modFitA1, test, type = "class")
+---
 For Random Forests is, which yielded a much better prediction:
 ```{r}
 predictionsB2 <- predict(modFitB1, test, type = "class")
