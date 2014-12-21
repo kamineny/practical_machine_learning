@@ -1,0 +1,288 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "Sridher Kaminani"
+date: "December 21, 2014"
+output: html_document
+Output: html_document, pdf_document
+---
+
+These are the files produced for homework assignment of Coursera's Practical Machine Learning from Johns Hopkins University. For more information about the several MOOCs comprised in this Specialization, please visit:
+https://www.coursera.org/specialization/jhudatascience/
+
+## Background:
+
+These files are produced for addressing the following homework assignment of Coursera's MOOC Practical Machine Learning from Johns Hopkins University. Here is the introduction of the assignment:
+
+"Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). "
+
+
+## Data:
+
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project comes from this original source: http://groupware.les.inf.puc-rio.br/har. 
+
+Please note that this assignment implementation loads the data directly from the original source (URL mentioned above), so that files are not required to be downloaded to your environment. 
+
+## Note:
+
+Please refer the exploratoryAnalysis.R (in archive folder) file in the gitHub repo in order to  understand the rationale behind the tatics choosen. For instance, the initial loading of data to memory involves assuming some values as NA. For obvious reasons, this is only possible after you have already pooked around the data initially.
+
+## Reproducibility:
+
+In order to reproduce the same results, you need install following packages and use the same  random seed mentioned in the following code snippet. 
+
+*Note:To install, for instance, the caret package in R, run this command: install.packages("caret")
+
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(e1071)
+```
+
+Load the same seed with the following line of code:
+```{r}
+set.seed(12345)
+```
+
+## Getting the data
+
+The training data set can be found on the following URL:
+
+```{r}
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+```
+
+The testing data set can be found on the following URL:
+```{r}
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+```
+
+Load data to memory
+```{r}
+train <- read.csv(url(trainUrl), na.strings=c("NA","#DIV/0!",""))
+test <- read.csv(url(testUrl), na.strings=c("NA","#DIV/0!",""))
+```
+
+
+##Partioning the training set into two
+
+Partioning train data set into two data sets, 60% for myTrain, 40% for myTest:
+
+```{r}
+inTrain <- createDataPartition(y=train$classe, p=0.6, list=FALSE)
+myTrain <- train[inTrain, ]; myTest <- train[-inTrain, ]
+dim(myTrain); dim(myTest)
+```
+
+
+## Cleaning the data
+
+The following transformations were used to clean the data:
+
+Transformation 1: Cleaning NearZeroVariance Variables
+
+Lets view the possible NZV Variables:
+```{r}
+myDataNZV <- nearZeroVar(myTrain, saveMetrics=TRUE)
+```
+
+Lets create another subset without NZV variables:
+```{r}
+myNZVvars <- names(myTrain) %in% c("new_window", "kurtosis_roll_belt", "kurtosis_picth_belt",
+"kurtosis_yaw_belt", "skewness_roll_belt", "skewness_roll_belt.1", "skewness_yaw_belt",
+"max_yaw_belt", "min_yaw_belt", "amplitude_yaw_belt", "avg_roll_arm", "stddev_roll_arm",
+"var_roll_arm", "avg_pitch_arm", "stddev_pitch_arm", "var_pitch_arm", "avg_yaw_arm",
+"stddev_yaw_arm", "var_yaw_arm", "kurtosis_roll_arm", "kurtosis_picth_arm",
+"kurtosis_yaw_arm", "skewness_roll_arm", "skewness_pitch_arm", "skewness_yaw_arm",
+"max_roll_arm", "min_roll_arm", "min_pitch_arm", "amplitude_roll_arm", "amplitude_pitch_arm",
+"kurtosis_roll_dumbbell", "kurtosis_picth_dumbbell", "kurtosis_yaw_dumbbell", "skewness_roll_dumbbell",
+"skewness_pitch_dumbbell", "skewness_yaw_dumbbell", "max_yaw_dumbbell", "min_yaw_dumbbell",
+"amplitude_yaw_dumbbell", "kurtosis_roll_forearm", "kurtosis_picth_forearm", "kurtosis_yaw_forearm",
+"skewness_roll_forearm", "skewness_pitch_forearm", "skewness_yaw_forearm", "max_roll_forearm",
+"max_yaw_forearm", "min_roll_forearm", "min_yaw_forearm", "amplitude_roll_forearm",
+"amplitude_yaw_forearm", "avg_roll_forearm", "stddev_roll_forearm", "var_roll_forearm",
+"avg_pitch_forearm", "stddev_pitch_forearm", "var_pitch_forearm", "avg_yaw_forearm",
+"stddev_yaw_forearm", "var_yaw_forearm")
+
+myTrain <- myTrain[!myNZVvars]
+
+# Check the new Number of observations
+dim(myTrain)
+```
+
+Transformation 2: Killing first column of Dataset - ID
+
+Removing the first "ID" variable so that it does not interfer with ML Algorithms:
+
+```{r}
+myTrain <- myTrain[c(-1)]
+```
+
+Transformation 3: Cleaning Variables which have too many NAs.
+
+For Variables that have more than a 60% threshold of NA's I'm going to leave them out:
+```{r}
+
+# creating another subset to iterate in loop
+trainV3 <- myTrain 
+
+# for every column in the train dataset
+for(i in 1:length(myTrain)) 
+{ 
+        # if n?? NAs > 60% of total observations
+        if( sum( is.na( myTrain[, i] ) ) /nrow(myTrain) >= .6 ) 
+        { 
+		for(j in 1:length(trainV3)) 
+                {
+                        # if the columns are the same	
+			if( length( grep(names(myTrain[i]), names(trainV3)[j]) ) ==1)  
+                        { 
+                                # Remove that column
+                                trainV3 <- trainV3[ , -j] 
+			}	
+		} 
+	}
+}
+
+# Check the new N?? of observations
+dim(trainV3)
+
+# Seting back to our training set:
+myTrain <- trainV3
+rm(trainV3)
+```
+
+Now let us do the exact same 3 transformations but on our test data sets (myTest and test data sets).
+
+```{r}
+clean1 <- colnames(myTrain)
+
+# already with classe column removed
+clean2 <- colnames(myTrain[, -58]) 
+
+myTest <- myTest[clean1]
+test <- test[clean2]
+
+# Check the new Number of observations
+dim(myTest)
+
+# Check the new Number of observations
+dim(test)
+
+# Note: The last column - problem_id - which is not equal to training sets, was also "automatically" removed
+# No need for this code:
+#test <- test[-length(test)]
+```
+
+In order to ensure proper functioning of Decision Trees and especially RandomForest Algorithm with the Test data set (data set provided), we need to coerce the data into the same type.
+
+```{r}
+for (i in 1:length(test) ) 
+{
+        for(j in 1:length(myTrain)) 
+        {
+		if( length( grep(names(myTrain[i]), names(test)[j]) ) ==1)  
+                {
+			class(test[j]) <- class(myTrain[i])
+		}      
+	}      
+}
+
+# Checking that Coertion really worked
+# note row 2 does not mean anything, this will be removed right.. now:
+
+test <- rbind(myTrain[2, -58] , test) 
+test <- test[-1,]
+```
+
+## Using ML algorithms for prediction: Decision Tree
+
+```{r}
+modFitA1 <- rpart(classe ~ ., data=myTrain, method="class")
+```
+
+Note: Viewing the decision tree with fancy run this command:
+```{r}
+fancyRpartPlot(modFitA1)
+```
+
+Predicting:
+```{r}
+predictionsA1 <- predict(modFitA1, myTest, type = "class")
+```
+
+(Moment of truth) Using confusion Matrix to test results:
+```{r}
+confusionMatrix(predictionsA1, myTest$classe)
+
+# Overall Statistics                                          
+#               Accuracy : 0.8683          
+#                 95% CI : (0.8607, 0.8757)
+#    No Information Rate : 0.2845          
+#    P-Value [Acc > NIR] : < 2.2e-16                                                 
+#                  Kappa : 0.8335 
+```
+
+## Using ML algorithms for prediction: Random Forests
+
+```{r}
+modFitB1 <- randomForest(classe ~. , data=myTrain)
+```
+
+Predicting:
+```{r}
+predictionsB1 <- predict(modFitB1, myTest, type = "class")
+```
+(Moment of truth) Using confusion Matrix to test results:
+```{r}
+confusionMatrix(predictionsB1, myTest$classe)
+
+# Overall Statistics                                         
+#              Accuracy : 0.999          
+#                95% CI : (0.998, 0.9996)
+#   No Information Rate : 0.2845         
+#   P-Value [Acc > NIR] : < 2.2e-16                                               
+#                 Kappa : 0.9987         
+#Mcnemar's Test P-Value : NA 
+```
+
+## Conclusion: 
+Prediction with Random Forests yielded better results than decision trees.
+
+## Generating Files to submit as answers for the Assignment:
+
+Finally, using the provided Test Set:
+Note:
+#For Decision Tree would be like this, but not going to use it now as Random forests produced more accurate results:
+#predictionsA2 <- predict(modFitA1, test, type = "class")
+
+For Random Forests is, which yielded a much better prediction:
+```{r}
+predictionsB2 <- predict(modFitB1, test, type = "class")
+```
+
+Function to generate files with predictions to submit for assignment
+```{r}
+
+pml_write_files = function(x)
+{
+        n = length(x)
+        
+        for(i in 1:n)
+        {
+                filename = paste0(".\\answers\\problem_id_",i,".txt")
+                write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+        }
+}
+
+pml_write_files(predictionsB2)
+```
